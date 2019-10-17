@@ -16,7 +16,7 @@ import (
 )
 
 // TestRotateSigningCA validates that service certs signed by pre- and
-// post-rotated CAs can be validated by both the new and old bundles.
+// post-rotation CAs can be validated by both the new and old bundles.
 func TestRotateSigningCA(t *testing.T) {
 	hosts := sets.NewString("127.0.0.1")
 

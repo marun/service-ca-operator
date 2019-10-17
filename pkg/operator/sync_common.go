@@ -23,6 +23,7 @@ import (
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 	"github.com/openshift/library-go/pkg/operator/resource/resourcemerge"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
+	"github.com/openshift/service-ca-operator/pkg/controller/api"
 	"github.com/openshift/service-ca-operator/pkg/operator/util"
 	"github.com/openshift/service-ca-operator/pkg/operator/v4_00_assets"
 )
@@ -122,7 +123,7 @@ func manageSignerCA(client coreclientv1.SecretsGetter, eventRecorder events.Reco
 		klog.V(4).Infof("rotating signing CA")
 		keyData := existing.Data[corev1.TLSPrivateKeyKey]
 		if len(keyData) == 0 {
-			return false, fmt.Errorf("secret '%s/%s' does not provide a value for 'tls.key'", secret.Namespace, secret.Name)
+			return false, fmt.Errorf("secret %s/%s does not provide a value for %q", secret.Namespace, secret.Name, corev1.TLSPrivateKeyKey)
 		}
 		key, err := keyutil.ParsePrivateKeyPEM(keyData)
 		if err != nil {
@@ -133,7 +134,7 @@ func manageSignerCA(client coreclientv1.SecretsGetter, eventRecorder events.Reco
 			return false, err
 		}
 		d := secret.Data
-		d[corev1.TLSCertKey], d[corev1.TLSPrivateKeyKey], d["intermediate.crt"], d["ca-bundle.crt"], err = signingCA.GetPEMBytes()
+		d[corev1.TLSCertKey], d[corev1.TLSPrivateKeyKey], d[api.IntermediateDataKey], d[api.BundleDataKey], err = signingCA.GetPEMBytes()
 		if err != nil {
 			return false, err
 		}
@@ -182,16 +183,16 @@ func manageSignerCABundle(client coreclientv1.CoreV1Interface, eventRecorder eve
 	secret := resourceread.ReadSecretV1OrDie(v4_00_assets.MustAsset("v4.0.0/service-serving-cert-signer-controller/signing-secret.yaml"))
 	currentSigningKeySecret, err := client.Secrets(secret.Namespace).Get(secret.Name, metav1.GetOptions{})
 	// Return err or if the signing secret has no data (should not normally happen).
-	if err != nil || len(currentSigningKeySecret.Data["tls.crt"]) == 0 {
+	if err != nil || len(currentSigningKeySecret.Data[corev1.TLSCertKey]) == 0 {
 		return false, err
 	}
 
 	// Prefer the full bundle after rotation since it contains all required CAs.
-	bundle := currentSigningKeySecret.Data["ca-bundle.crt"]
+	bundle := currentSigningKeySecret.Data[api.BundleDataKey]
 	if len(bundle) == 0 {
-		bundle = currentSigningKeySecret.Data["tls.crt"]
+		bundle = currentSigningKeySecret.Data[corev1.TLSCertKey]
 	}
-	configMap.Data["ca-bundle.crt"] = string(bundle)
+	configMap.Data[api.BundleDataKey] = string(bundle)
 
 	_, mod, err := resourceapply.ApplyConfigMap(client, eventRecorder, configMap)
 	return mod, err
