@@ -584,13 +584,13 @@ func TestE2E(t *testing.T) {
 		// Retrieve the pre-rotation service cert
 		oldCertPEM, oldKeyPEM, err := pollForServiceCert(t, adminClient, ns.Name, testSecretName, nil, nil)
 		if err != nil {
-			t.Fatalf("failed to retrieve service cert: %v", err)
+			t.Fatalf("error retrieving service cert: %v", err)
 		}
 
 		// Retrieve the pre-rotation ca bundle
 		oldBundlePEM, err := pollForCABundle(t, adminClient, ns.Name, testConfigMapName, nil)
 		if err != nil {
-			t.Fatalf("failed to retrieve ca bundle: %v", err)
+			t.Fatalf("error retrieving ca bundle: %v", err)
 		}
 
 		// Prompt CA rotation
@@ -599,16 +599,16 @@ func TestE2E(t *testing.T) {
 		// Retrieve the post-rotation service cert
 		newCertPEM, newKeyPEM, err := pollForServiceCert(t, adminClient, ns.Name, testSecretName, oldCertPEM, oldKeyPEM)
 		if err != nil {
-			t.Fatalf("failed to retrieve service cert: %v", err)
+			t.Fatalf("error retrieving service cert: %v", err)
 		}
 
 		// Retrieve the post-rotation ca bundle
 		newBundlePEM, err := pollForCABundle(t, adminClient, ns.Name, testConfigMapName, oldBundlePEM)
 		if err != nil {
-			t.Fatalf("failed to retrieve ca bundle: %v", err)
+			t.Fatalf("error retrieving ca bundle: %v", err)
 		}
 
-		// Validate all the permutations of server and client cert state
+		// Validate the permutations of server and client cert state
 		testCases := map[string]struct {
 			certPEM   []byte
 			keyPEM    []byte
@@ -705,6 +705,77 @@ func applyRotatableCert(t *testing.T, client *kubernetes.Clientset) {
 	}
 }
 
+func checkClientTrust(t *testing.T, certPEM, keyPEM, bundlePEM []byte) {
+	// Emulate how a service will consume the serving cert by writing
+	// the cert and key to disk.
+	certFile, err := ioutil.TempFile("", v1.TLSCertKey)
+	if err != nil {
+		t.Fatalf("error creating tmpfile for cert: %v", err)
+
+	}
+	defer os.Remove(certFile.Name())
+	certFile.Write(certPEM)
+
+	keyFile, err := ioutil.TempFile("", v1.TLSPrivateKeyKey)
+	if err != nil {
+		t.Fatalf("error creating tmpfile for key: %v", err)
+
+	}
+	defer os.Remove(keyFile.Name())
+	keyFile.Write(keyPEM)
+
+	// The need to listen on a random port precludes the use of
+	// ListenAndServeTLS since that method provides no way to
+	// determine the port that the server ends up listenting
+	// on. Creating a listener and using ServeTLS instead ensures a
+	// random port will be allocated (by specifying ':0') and that the
+	// resulting port is discoverable via the listener's Addr()
+	// method.
+	listenerAddress := "127.0.0.1:0"
+	ln, err := net.Listen("tcp", listenerAddress)
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+	defer ln.Close()
+	serverAddress := ln.Addr().String()
+
+	srv := http.Server{}
+	// Start a server configured with the cert and key
+	go func() {
+		if err := srv.ServeTLS(ln, certFile.Name(), keyFile.Name()); err != nil && err != http.ErrServerClosed {
+			t.Fatalf("ServeTLS failed: %v", err)
+		}
+	}()
+	defer func() {
+		err = srv.Close()
+		if err != nil {
+			t.Fatalf("tls server close failed: %v", err)
+		}
+	}()
+
+	// Make a client connection configured with the provided bundle.
+	// A client is expected to consume PEM content from a file, but
+	// there would be little value in writing the bundle to disk ad
+	// reading it back.
+	roots := x509.NewCertPool()
+	roots.AppendCertsFromPEM(bundlePEM)
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			RootCAs: roots,
+		},
+	}
+	client := &http.Client{
+		Transport: tr,
+		Timeout:   5 * time.Second,
+	}
+	clientAddress := fmt.Sprintf("https://%s", serverAddress)
+	_, err = client.Get(clientAddress)
+	if err != nil {
+		t.Fatalf("Failed to receive output: %v", err)
+	}
+	// No error indicates that validation was successful
+}
+
 func pollForServiceCert(t *testing.T, client *kubernetes.Clientset, namespace, name string, oldCertValue, oldKeyValue []byte) ([]byte, []byte, error) {
 	resourceID := fmt.Sprintf("Secret \"%s/%s\"", namespace, name)
 	expectedDataSize := 2
@@ -783,181 +854,3 @@ func pollForResource(t *testing.T, resourceID string, accessor func() (pkgruntim
 	})
 	return obj, err
 }
-
-func checkClientTrust(t *testing.T, certPEM, keyPEM, bundlePEM []byte) {
-	// Emulate how a service will consume the serving cert by writing
-	// the cert and key to disk.
-	certFile, err := ioutil.TempFile("", v1.TLSCertKey)
-	if err != nil {
-		t.Fatalf("error creating tmpfile for cert: %v", err)
-
-	}
-	defer os.Remove(certFile.Name())
-	certFile.Write(certPEM)
-
-	keyFile, err := ioutil.TempFile("", v1.TLSPrivateKeyKey)
-	if err != nil {
-		t.Fatalf("error creating tmpfile for key: %v", err)
-
-	}
-	defer os.Remove(keyFile.Name())
-	keyFile.Write(keyPEM)
-
-	// The need to listen on a random port precludes the use of
-	// ListenAndServeTLS since that method provides no way to
-	// determine the port that the server ends up listenting
-	// on. Creating a listener and using ServeTLS instead ensures a
-	// random port will be allocated (by specifying ':0') and that the
-	// resulting port is discoverable via the listener's Addr()
-	// method.
-	listenerAddress := "127.0.0.1:0"
-	ln, err := net.Listen("tcp", listenerAddress)
-	if err != nil {
-		t.Fatalf("net.Listen: %v", err)
-	}
-	defer ln.Close()
-	serverAddress := ln.Addr().String()
-
-	srv := http.Server{}
-	// Start a server configured with the cert and key
-	go func() {
-		if err := srv.ServeTLS(ln, certFile.Name(), keyFile.Name()); err != nil && err != http.ErrServerClosed {
-			t.Fatalf("ServeTLS failed: %v", err)
-		}
-	}()
-	defer func() {
-		err = srv.Close()
-		if err != nil {
-			t.Fatalf("tls server close failed: %v", err)
-		}
-	}()
-
-	// Make a client connection configured with the provided bundle.
-	// A client is expected to consume PEM content from a file, but
-	// there would be little value in writing the bundle to disk ad
-	// reading it back.
-	roots := x509.NewCertPool()
-	roots.AppendCertsFromPEM(bundlePEM)
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			RootCAs: roots,
-		},
-	}
-	client := &http.Client{
-		Transport: tr,
-		Timeout:   5 * time.Second,
-	}
-	clientAddress := fmt.Sprintf("https://%s", serverAddress)
-	_, err = client.Get(clientAddress)
-	if err != nil {
-		t.Fatalf("Failed to receive output: %v", err)
-	}
-	// No error indicates that validation was successful
-}
-
-// func serverCertFromSecret(secret *v1.Secret) (*crypto.TLSCertificateConfig, error) {
-// 	// Create certificates from the cert PEM
-// 	certPEM, ok := secret.Data[v1.TLSCertKey]
-// 	if !ok {
-// 		return nil, fmt.Errorf("%q not found", v1.TLSCertKey)
-// 	}
-// 	certASN1, err := pemToASN1(certPEM)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("failed to convert cert: %v", err)
-// 	}
-// 	certs, err := x509.ParseCertificates(certASN1)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("failed to parse certificates: %v", err)
-// 	}
-
-// 	// Create private key from key PEM
-// 	keyPEM, ok := secret.Data[v1.TLSPrivateKeyKey]
-// 	if !ok {
-// 		return nil, fmt.Errorf("%q not found", v1.TLSPrivateKeyKey)
-// 	}
-// 	// At most one key is expected
-// 	keyBlock, rest := pem.Decode(keyPEM)
-// 	if keyBlock == nil {
-// 		return nil, fmt.Errorf("key PEM not parsed")
-// 	}
-// 	if len(rest) > 0 {
-// 		return nil, fmt.Errorf("key PEM has trailing data")
-// 	}
-// 	key, err = x509.ParsePKCS1PrivateKey(keyBlock.Bytes())
-// 	if err != nil {
-// 		return nil, fmt.Errorf("failed to parse key: %v", err)
-// 	}
-
-// 	return &crypto.TLSCertificateConfig{
-// 		Certs: certs,
-// 		Key:   key,
-// 	}, nil
-// }
-
-// func pemToASN1(pemData []byte) ([]byte, error) {
-// 	asn1Data := []byte{}
-// 	rest := pemData
-// 	for {
-// 		var block *pem.Block
-// 		block, rest = pem.Decode(rest)
-// 		if block == nil {
-// 			return nil, fmt.Errorf("PEM not parsed")
-// 		}
-// 		asn1Data = append(asn1Data, block.Bytes...)
-// 		if len(rest) == 0 {
-// 			break
-// 		}
-// 	}
-// 	return asn1Data, nil
-// }
-
-/*
-	namePrefix := "e2e-rotate-CA-"
-
-	// Create test namespace
-	ns, err := client.CoreV1().Namespaces().Create(&v1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: namePrefix,
-		},
-	})
-	if err != nil {
-		t.Fatalf("failed to create test namespace: %v", err)
-	}
-	namespace := ns.Namespace
-
-	// Create annotated service to prompt creation of a cert secret
-	service, err := client.CoreV1().Services(namespace).Create(&v1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: namePrefix,
-		},
-	})
-	if err != nil {
-		t.Fatalf("failed to create configmap service: %v", err)
-	}
-	secretName := service.Name
-	service.ObjectMeta.Annotations = map[string]string{
-		api.ServingCertSecretAnnotation: secretName,
-	}
-	_, err := client.CoreV1().Services(namespace).Update(service)
-	if err != nil {
-		t.Fatalf("failed to update service with annotation: %v", err)
-	}
-
-	// Create annotated configmap to prompt injection of the ca bundle.
-	configMap, err := client.CoreV1().Configmaps(namespace).Create(&v1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: namePrefix,
-		},
-	})
-	if err != nil {
-		t.Fatalf("failed to create configmap service: %v", err)
-	}
-	configmMapName := configMap.Name
-	configMap.ObjectMeta.Annotations = map[string]string{
-		api.InjectCABundleAnnotationName: "true",
-	}
-	_, err := client.CoreV1().ConfigMaps(namespace).Update(configMap)
-	if err != nil {
-		t.Fatalf("failed to update configmap with annotation: %v", err)
-	}
-*/

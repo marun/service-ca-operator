@@ -2,11 +2,7 @@ package util
 
 import (
 	"crypto/rsa"
-	"crypto/tls"
 	"crypto/x509"
-	"fmt"
-	"net"
-	"net/http"
 	"testing"
 	"time"
 
@@ -87,67 +83,31 @@ func TestRotateSigningCA(t *testing.T) {
 	}
 	for testName, tc := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			checkClientTrust(t, tc.servingCert, tc.bundle)
+			roots := x509.NewCertPool()
+			for _, bundleCert := range tc.bundle {
+				roots.AddCert(bundleCert)
+			}
+
+			var intermediates *x509.CertPool
+			if len(tc.servingCert.Certs) > 1 {
+				intermediates = x509.NewCertPool()
+				for i := 1; i < len(tc.servingCert.Certs); i++ {
+					intermediates.AddCert(tc.servingCert.Certs[i])
+				}
+			}
+
+			opts := x509.VerifyOptions{
+				DNSName:       "",
+				Intermediates: intermediates,
+				Roots:         roots,
+			}
+
+			_, err = tc.servingCert.Certs[0].Verify(opts)
+			if err != nil {
+				t.Fatalf("%s: error verifying client trust: %v", testName, err)
+			}
 		})
 	}
-}
-
-func checkClientTrust(t *testing.T, servingCert *crypto.TLSCertificateConfig, bundleCerts []*x509.Certificate) {
-	// Configure a server with the serving cert
-	rawCAs := [][]byte{}
-	for _, caCert := range servingCert.Certs {
-		rawCAs = append(rawCAs, caCert.Raw)
-	}
-	srv := http.Server{
-		TLSConfig: &tls.Config{
-			Certificates: []tls.Certificate{
-				{
-					Certificate: rawCAs,
-					PrivateKey:  servingCert.Key,
-				},
-			},
-		},
-	}
-
-	// Create a listener on a random port
-	listenerAddress := "127.0.0.1:0"
-	ln, err := net.Listen("tcp", listenerAddress)
-	if err != nil {
-		t.Fatalf("net.Listen: %v", err)
-	}
-	serverAddress := ln.Addr().String()
-	defer ln.Close()
-
-	// Start a server configured with the cert
-	go func() {
-		if err := srv.ServeTLS(ln, "", ""); err != nil && err != http.ErrServerClosed {
-			t.Fatalf("ServeTLS failed: %v", err)
-		}
-	}()
-	defer func() {
-		err = srv.Close()
-		if err != nil {
-			t.Fatalf("tls server close failed: %v", err)
-		}
-	}()
-
-	// Make a client connection configured with the provided bundle
-	roots := x509.NewCertPool()
-	for _, bundleCert := range bundleCerts {
-		roots.AddCert(bundleCert)
-	}
-	tlsConf := &tls.Config{RootCAs: roots}
-	tr := &http.Transport{TLSClientConfig: tlsConf}
-	client := &http.Client{
-		Transport: tr,
-		Timeout:   5 * time.Second,
-	}
-	clientAddress := fmt.Sprintf("https://%s", serverAddress)
-	_, err = client.Get(clientAddress)
-	if err != nil {
-		t.Fatalf("Failed to receive output: %v", err)
-	}
-	// No error indicates that validation was successful
 }
 
 func TestCertHalfwayExpired(t *testing.T) {
