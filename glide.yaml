@@ -15,7 +15,9 @@ import:
 - package: k8s.io/component-base
   version: kubernetes-1.16.0
 - package: github.com/openshift/api
-  version: master
+  # TODO(marun) Revert once PR change has landed in master
+  version: refactor-cabundle-injection
+  repo: git@github.com:marun/api.git
 - package: github.com/openshift/client-go
   version: master
 - package: github.com/openshift/library-go
