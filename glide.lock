@@ -1,5 +1,5 @@
-hash: e905734cf69676fd784f44afcec2695c6af11719edfdba852cc656399b4e6c81
-updated: 2019-11-01T09:25:39.534211343-07:00
+hash: 0346ca8557b713b5cc7376479cb19e802a49a3157e6d83dc198c5fa36f92e908
+updated: 2019-11-03T18:09:32.034553972-08:00
 imports:
 - name: github.com/beorn7/perks
   version: 3a771d992973f24aa725d07868b467d1ddfceafb
@@ -133,7 +133,8 @@ imports:
 - name: github.com/NYTimes/gziphandler
   version: 56545f4a5d46df9a6648819d1664c3a03a13ffdb
 - name: github.com/openshift/api
-  version: 86cb5b750830da685a27b7e983971270c9c6f5f6
+  version: fea36d33b78ce9afe469da609456e104dff82b65
+  repo: git@github.com:marun/api.git
   subpackages:
   - apps
   - apps/v1
@@ -213,6 +214,7 @@ imports:
   - pkg/crypto
   - pkg/operator/condition
   - pkg/operator/events
+  - pkg/operator/loglevel
   - pkg/operator/management
   - pkg/operator/resource/resourceapply
   - pkg/operator/resource/resourcemerge
@@ -805,12 +807,9 @@ imports:
   - pkg/apis/apiregistration/v1
   - pkg/apis/apiregistration/v1beta1
   - pkg/client/clientset_generated/clientset
-  - pkg/client/clientset_generated/clientset/fake
   - pkg/client/clientset_generated/clientset/scheme
   - pkg/client/clientset_generated/clientset/typed/apiregistration/v1
-  - pkg/client/clientset_generated/clientset/typed/apiregistration/v1/fake
   - pkg/client/clientset_generated/clientset/typed/apiregistration/v1beta1
-  - pkg/client/clientset_generated/clientset/typed/apiregistration/v1beta1/fake
   - pkg/client/informers/externalversions
   - pkg/client/informers/externalversions/apiregistration
   - pkg/client/informers/externalversions/apiregistration/v1

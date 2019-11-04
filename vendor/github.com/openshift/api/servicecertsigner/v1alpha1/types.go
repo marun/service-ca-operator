@@ -36,33 +36,17 @@ type ServiceServingCertSignerConfig struct {
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
-// APIServiceCABundleInjectorConfig provides information to configure an APIService CA Bundle Injector controller
-type APIServiceCABundleInjectorConfig struct {
+// CABundleInjectorConfig provides information to configure a CA Bundle Injector controller
+type CABundleInjectorConfig struct {
 	metav1.TypeMeta `json:",inline"`
 
 	// This configuration is not meant to be edited by humans as
 	// it is normally managed by the service cert signer operator.
-	// ServiceCertSignerOperatorConfig's spec.apiServiceCABundleInjectorConfig
+	// ServiceCertSignerOperatorConfig's spec.caBundleInjectorConfig
 	// can be used to override the defaults for this configuration.
 	configv1.GenericControllerConfig `json:",inline"`
 
-	// caBundleFile holds the ca bundle to apply to APIServices.
-	CABundleFile string `json:"caBundleFile"`
-}
-
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
-// ConfigMapCABundleInjectorConfig provides information to configure a ConfigMap CA Bundle Injector controller
-type ConfigMapCABundleInjectorConfig struct {
-	metav1.TypeMeta `json:",inline"`
-
-	// This configuration is not meant to be edited by humans as
-	// it is normally managed by the service cert signer operator.
-	// ServiceCertSignerOperatorConfig's spec.configMapCABundleInjectorConfig
-	// can be used to override the defaults for this configuration.
-	configv1.GenericControllerConfig `json:",inline"`
-
-	// caBundleFile holds the ca bundle to apply to ConfigMaps.
+	// caBundleFile holds the ca bundle to inject
 	CABundleFile string `json:"caBundleFile"`
 }
 
@@ -89,19 +73,12 @@ type ServiceCertSignerOperatorConfigSpec struct {
 	// +kubebuilder:pruning:PreserveUnknownFields
 	ServiceServingCertSignerConfig runtime.RawExtension `json:"serviceServingCertSignerConfig"`
 
-	// apiServiceCABundleInjectorConfig holds a sparse config that the user wants for this component.  It only needs to be the overrides from the defaults
+	// caBundleInjectorConfig holds a sparse config that the user wants for this component.  It only needs to be the overrides from the defaults
 	// it will end up overlaying in the following order:
 	// 1. hardcoded default
 	// 2. this config
 	// +kubebuilder:pruning:PreserveUnknownFields
-	APIServiceCABundleInjectorConfig runtime.RawExtension `json:"apiServiceCABundleInjectorConfig"`
-
-	// configMapCABundleInjectorConfig holds a sparse config that the user wants for this component.  It only needs to be the overrides from the defaults
-	// it will end up overlaying in the following order:
-	// 1. hardcoded default
-	// 2. this config
-	// +kubebuilder:pruning:PreserveUnknownFields
-	ConfigMapCABundleInjectorConfig runtime.RawExtension `json:"configMapCABundleInjectorConfig"`
+	CABundleInjectorConfig runtime.RawExtension `json:"caBundleInjectorConfig"`
 }
 
 type ServiceCertSignerOperatorConfigStatus struct {
