@@ -13,8 +13,7 @@ import (
 	utilflag "k8s.io/component-base/cli/flag"
 	"k8s.io/component-base/logs"
 
-	"github.com/openshift/service-ca-operator/pkg/cmd/apiservicecabundle"
-	"github.com/openshift/service-ca-operator/pkg/cmd/configmapcabundle"
+	"github.com/openshift/service-ca-operator/pkg/cmd/cabundleinjector"
 	"github.com/openshift/service-ca-operator/pkg/cmd/operator"
 	"github.com/openshift/service-ca-operator/pkg/cmd/servingcertsigner"
 )
@@ -47,8 +46,7 @@ func NewSSCSCommand() *cobra.Command {
 
 	cmd.AddCommand(operator.NewOperator())
 	cmd.AddCommand(servingcertsigner.NewController())
-	cmd.AddCommand(apiservicecabundle.NewController())
-	cmd.AddCommand(configmapcabundle.NewController())
+	cmd.AddCommand(cabundleinjector.NewController())
 
 	return cmd
 }

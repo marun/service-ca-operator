@@ -6,6 +6,8 @@ import (
 	operatorv1 "github.com/openshift/api/operator/v1"
 )
 
+var cleanupDeprecatedDone bool
+
 func syncControllers(c serviceCAOperator, operatorConfig *operatorv1.ServiceCA) error {
 	// Any modification of resource we want to trickle down to force deploy all of the controllers.
 	// Sync the controller NS and the other resources. These should be mostly static.
@@ -14,17 +16,21 @@ func syncControllers(c serviceCAOperator, operatorConfig *operatorv1.ServiceCA) 
 		return err
 	}
 
+	// Only perform cleanup of deprecated resources once per process invocation.
+	if !cleanupDeprecatedDone {
+		err = cleanupDeprecatedControllerResources(c)
+		if err != nil {
+			return err
+		}
+		cleanupDeprecatedDone = true
+	}
+
 	err = manageSignerControllerResources(c, &needsDeploy)
 	if err != nil {
 		return err
 	}
 
-	err = manageAPIServiceControllerResources(c, &needsDeploy)
-	if err != nil {
-		return err
-	}
-
-	err = manageConfigMapCABundleControllerResources(c, &needsDeploy)
+	err = manageCABundleInjectionControllerResources(c, &needsDeploy)
 	if err != nil {
 		return err
 	}
@@ -50,22 +56,12 @@ func syncControllers(c serviceCAOperator, operatorConfig *operatorv1.ServiceCA) 
 		return err
 	}
 
-	// Sync the API service controller.
-	configModified, err = manageAPIServiceControllerConfig(c.corev1Client, c.eventRecorder)
+	// Sync the ca bundle injection controller.
+	configModified, err = manageCABundleInjectionControllerConfig(c.corev1Client, c.eventRecorder)
 	if err != nil {
 		return err
 	}
-	_, err = manageAPIServiceControllerDeployment(c.appsv1Client, c.eventRecorder, operatorConfig, needsDeploy || caModified || configModified)
-	if err != nil {
-		return err
-	}
-
-	// Sync the API service controller.
-	configModified, err = manageConfigMapCABundleControllerConfig(c.corev1Client, c.eventRecorder)
-	if err != nil {
-		return err
-	}
-	_, err = manageConfigMapCABundleControllerDeployment(c.appsv1Client, c.eventRecorder, operatorConfig, needsDeploy || caModified || configModified)
+	_, err = manageCABundleInjectionControllerDeployment(c.appsv1Client, c.eventRecorder, operatorConfig, needsDeploy || caModified || configModified)
 	if err != nil {
 		return err
 	}
