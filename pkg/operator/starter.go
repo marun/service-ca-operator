@@ -31,8 +31,7 @@ const (
 
 var targetDeploymentNames = sets.NewString(
 	api.SignerControllerDeploymentName,
-	api.APIServiceInjectorDeploymentName,
-	api.ConfigMapInjectorDeploymentName,
+	api.CABundleInjectorDeploymentName,
 )
 
 func RunOperator(ctx *controllercmd.ControllerContext) error {

@@ -2,30 +2,30 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   namespace: openshift-service-ca
-  name: configmap-cabundle-injector
+  name: cabundle-injector
   labels:
-    app: configmap-cabundle-injector
-    configmap-cabundle-injector: "true"
+    app: cabundle-injector
+    cabundle-injector: "true"
 spec:
   strategy:
     type: Recreate
   selector:
     matchLabels:
-      app: configmap-cabundle-injector
-      configmap-cabundle-injector: "true"
+      app: cabundle-injector
+      cabundle-injector: "true"
   template:
     metadata:
-      name: configmap-cabundle-injector
+      name: cabundle-injector
       labels:
-        app: configmap-cabundle-injector
-        configmap-cabundle-injector: "true"
+        app: cabundle-injector
+        cabundle-injector: "true"
     spec:
-      serviceAccountName: configmap-cabundle-injector-sa
+      serviceAccountName: cabundle-injector-sa
       containers:
-      - name: configmap-cabundle-injector-controller
+      - name: cabundle-injector-controller
         image: ${IMAGE}
         imagePullPolicy: IfNotPresent
-        command: ["service-ca-operator", "configmap-cabundle-injector"]
+        command: ["service-ca-operator", "cabundle-injector"]
         args:
         - "--config=/var/run/configmaps/config/controller-config.yaml"
         ports:
@@ -45,7 +45,7 @@ spec:
           name: signing-cabundle
       - name: config
         configMap:
-          name: configmap-cabundle-injector-config
+          name: cabundle-injector-config
       nodeSelector:
         node-role.kubernetes.io/master: ""
       priorityClassName: "system-cluster-critical"

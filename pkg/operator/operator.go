@@ -53,21 +53,18 @@ func NewServiceCAOperator(
 	configEvents := operator.FilterByNames(api.OperatorConfigInstanceName)
 	configMapEvents := operator.FilterByNames(
 		api.SignerControllerConfigMapName,
-		api.APIServiceInjectorConfigMapName,
-		api.ConfigMapInjectorConfigMapName,
+		api.CABundleInjectorConfigMapName,
 		api.SigningCABundleConfigMapName,
 	)
 	saEvents := operator.FilterByNames(
 		api.SignerControllerSAName,
-		api.APIServiceInjectorSAName,
-		api.ConfigMapInjectorSAName,
+		api.CABundleInjectorSAName,
 	)
 	serviceEvents := operator.FilterByNames(api.SignerControllerServiceName)
 	secretEvents := operator.FilterByNames(api.SignerControllerSecretName)
 	deploymentEvents := operator.FilterByNames(
 		api.SignerControllerDeploymentName,
-		api.APIServiceInjectorDeploymentName,
-		api.ConfigMapInjectorDeploymentName,
+		api.CABundleInjectorDeploymentName,
 	)
 	namespaceEvents := operator.FilterByNames(operatorclient.TargetNamespace)
 

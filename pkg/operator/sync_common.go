@@ -23,6 +23,7 @@ import (
 	"github.com/openshift/library-go/pkg/operator/resource/resourcemerge"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	"github.com/openshift/service-ca-operator/pkg/controller/api"
+	"github.com/openshift/service-ca-operator/pkg/operator/operatorclient"
 	"github.com/openshift/service-ca-operator/pkg/operator/v4_00_assets"
 )
 
@@ -35,12 +36,8 @@ func manageSignerControllerResources(c serviceCAOperator, modified *bool) error 
 	return manageControllerResources(c, "v4.0.0/service-serving-cert-signer-controller/", modified)
 }
 
-func manageAPIServiceControllerResources(c serviceCAOperator, modified *bool) error {
-	return manageControllerResources(c, "v4.0.0/apiservice-cabundle-controller/", modified)
-}
-
-func manageConfigMapCABundleControllerResources(c serviceCAOperator, modified *bool) error {
-	return manageControllerResources(c, "v4.0.0/configmap-cabundle-controller/", modified)
+func manageCABundleInjectionControllerResources(c serviceCAOperator, modified *bool) error {
+	return manageControllerResources(c, "v4.0.0/cabundle-injection-controller/", modified)
 }
 
 func manageControllerResources(c serviceCAOperator, resourcePath string, modified *bool) error {
@@ -172,7 +169,7 @@ func initializeSigningSecret(secret *corev1.Secret, duration time.Duration) erro
 }
 
 func manageSignerCABundle(client coreclientv1.CoreV1Interface, eventRecorder events.Recorder, forceUpdate bool) (bool, error) {
-	configMap := resourceread.ReadConfigMapV1OrDie(v4_00_assets.MustAsset("v4.0.0/apiservice-cabundle-controller/signing-cabundle.yaml"))
+	configMap := resourceread.ReadConfigMapV1OrDie(v4_00_assets.MustAsset("v4.0.0/cabundle-injection-controller/signing-cabundle.yaml"))
 	if !forceUpdate {
 		// We don't need to force an update; return if the configmap already exists (or error getting).
 		_, err := client.ConfigMaps(configMap.Namespace).Get(configMap.Name, metav1.GetOptions{})
@@ -211,20 +208,9 @@ func manageSignerControllerConfig(client coreclientv1.ConfigMapsGetter, eventRec
 	return mod, err
 }
 
-func manageAPIServiceControllerConfig(client coreclientv1.ConfigMapsGetter, eventRecorder events.Recorder) (bool, error) {
-	configMap := resourceread.ReadConfigMapV1OrDie(v4_00_assets.MustAsset("v4.0.0/apiservice-cabundle-controller/cm.yaml"))
-	defaultConfig := v4_00_assets.MustAsset("v4.0.0/apiservice-cabundle-controller/defaultconfig.yaml")
-	requiredConfigMap, _, err := resourcemerge.MergeConfigMap(configMap, "controller-config.yaml", nil, defaultConfig)
-	if err != nil {
-		return false, err
-	}
-	_, mod, err := resourceapply.ApplyConfigMap(client, eventRecorder, requiredConfigMap)
-	return mod, err
-}
-
-func manageConfigMapCABundleControllerConfig(client coreclientv1.ConfigMapsGetter, eventRecorder events.Recorder) (bool, error) {
-	configMap := resourceread.ReadConfigMapV1OrDie(v4_00_assets.MustAsset("v4.0.0/configmap-cabundle-controller/cm.yaml"))
-	defaultConfig := v4_00_assets.MustAsset("v4.0.0/configmap-cabundle-controller/defaultconfig.yaml")
+func manageCABundleInjectionControllerConfig(client coreclientv1.ConfigMapsGetter, eventRecorder events.Recorder) (bool, error) {
+	configMap := resourceread.ReadConfigMapV1OrDie(v4_00_assets.MustAsset("v4.0.0/cabundle-injection-controller/cm.yaml"))
+	defaultConfig := v4_00_assets.MustAsset("v4.0.0/cabundle-injection-controller/defaultconfig.yaml")
 	requiredConfigMap, _, err := resourcemerge.MergeConfigMap(configMap, "controller-config.yaml", nil, defaultConfig)
 	if err != nil {
 		return false, err
@@ -237,12 +223,8 @@ func manageSignerControllerDeployment(client appsclientv1.AppsV1Interface, event
 	return manageDeployment(client, eventRecorder, options, "v4.0.0/service-serving-cert-signer-controller/", forceDeployment)
 }
 
-func manageAPIServiceControllerDeployment(client appsclientv1.AppsV1Interface, eventRecorder events.Recorder, options *operatorv1.ServiceCA, forceDeployment bool) (bool, error) {
-	return manageDeployment(client, eventRecorder, options, "v4.0.0/apiservice-cabundle-controller/", forceDeployment)
-}
-
-func manageConfigMapCABundleControllerDeployment(client appsclientv1.AppsV1Interface, eventRecorder events.Recorder, options *operatorv1.ServiceCA, forceDeployment bool) (bool, error) {
-	return manageDeployment(client, eventRecorder, options, "v4.0.0/configmap-cabundle-controller/", forceDeployment)
+func manageCABundleInjectionControllerDeployment(client appsclientv1.AppsV1Interface, eventRecorder events.Recorder, options *operatorv1.ServiceCA, forceDeployment bool) (bool, error) {
+	return manageDeployment(client, eventRecorder, options, "v4.0.0/cabundle-injection-controller/", forceDeployment)
 }
 
 func manageDeployment(client appsclientv1.AppsV1Interface, eventRecorder events.Recorder, options *operatorv1.ServiceCA, resourcePath string, forceDeployment bool) (bool, error) {
@@ -261,4 +243,52 @@ func manageDeployment(client appsclientv1.AppsV1Interface, eventRecorder events.
 
 func serviceServingCertSignerName() string {
 	return fmt.Sprintf("%s@%d", "openshift-service-serving-signer", time.Now().Unix())
+}
+
+// cleanupDeprecatedControllerResources ensures the deletion of resources
+// associated with deprecated controller.
+func cleanupDeprecatedControllerResources(c serviceCAOperator) error {
+	klog.V(4).Infof("attempting removal of deprecated controller resources in namespace %q", operatorclient.TargetNamespace)
+	err := cleanupBundleInjector(c, "apiservice")
+	if err != nil {
+		return err
+	}
+	return cleanupBundleInjector(c, "configmap")
+}
+
+// cleanupBundleInjector removes resources associated with the
+// deprecated injection controllers for configmap and apiservice.
+func cleanupBundleInjector(c serviceCAOperator, typeName string) error {
+	namespace := operatorclient.TargetNamespace
+	commonName := fmt.Sprintf("%s-cabundle-injector", typeName)
+	configName := fmt.Sprintf("%s-config", commonName)
+	lockName := fmt.Sprintf("%s-lock", commonName)
+	saName := fmt.Sprintf("%s-sa", commonName)
+	roleAndBindingName := fmt.Sprintf("system:openshift:controller:%s", commonName)
+	delOpts := &metav1.DeleteOptions{}
+	deletionFuncs := []func() error{
+		// Delete Deployment openshift-service-ca/{type}-cabundle-injector
+		func() error { return c.appsv1Client.Deployments(namespace).Delete(commonName, delOpts) },
+		// Delete ClusterRole system:openshift:controller:{type}-cabundle-injector
+		func() error { return c.rbacv1Client.ClusterRoles().Delete(roleAndBindingName, delOpts) },
+		// Delete ClusterRoleBinding system:openshift:controller:{type}-cabundle-injector
+		func() error { return c.rbacv1Client.ClusterRoleBindings().Delete(roleAndBindingName, delOpts) },
+		// Delete ConfigMap openshift-service-ca/{type}-cabundle-injector-config
+		func() error { return c.corev1Client.ConfigMaps(namespace).Delete(configName, delOpts) },
+		// Delete ConfigMap openshift-service-ca/{type}-cabundle-injector-lock
+		func() error { return c.corev1Client.ConfigMaps(namespace).Delete(lockName, delOpts) },
+		// Delete Role openshift-service-ca/system:openshift:controller:{type}-cabundle-injector
+		func() error { return c.rbacv1Client.Roles(namespace).Delete(roleAndBindingName, delOpts) },
+		// Delete RoleBinding openshift-service-ca/system:openshift:controller:{type}-cabundle-injector
+		func() error { return c.rbacv1Client.RoleBindings(namespace).Delete(roleAndBindingName, delOpts) },
+		// Delete ServiceAccount openshift-service-ca/{type}-cabundle-injector-sa
+		func() error { return c.corev1Client.ServiceAccounts(namespace).Delete(saName, delOpts) },
+	}
+	for _, deletionFunc := range deletionFuncs {
+		err := deletionFunc()
+		if err != nil && !apierrors.IsNotFound(err) {
+			return err
+		}
+	}
+	return nil
 }
