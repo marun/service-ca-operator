@@ -35,7 +35,9 @@ type controllerConfig struct {
 type configBuilderFunc func(config *caBundleInjectorConfig) controllerConfig
 
 func StartCABundleInjector(ctx *controllercmd.ControllerContext) error {
-	// TODO(marun) Detect and respond to changes in this path rather than
+	// TODO(marun)
+	// - accept this as an argument
+	// - detect and respond to changes in this path rather than
 	// depending on the operator for redeployment
 	caBundleFile := "/var/run/configmaps/signing-cabundle/ca-bundle.crt"
 

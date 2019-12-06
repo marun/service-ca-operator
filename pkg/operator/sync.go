@@ -57,10 +57,6 @@ func syncControllers(c serviceCAOperator, operatorConfig *operatorv1.ServiceCA) 
 	}
 
 	// Sync the ca bundle injection controller.
-	configModified, err = manageCABundleInjectionControllerConfig(c.corev1Client, c.eventRecorder)
-	if err != nil {
-		return err
-	}
 	_, err = manageCABundleInjectionControllerDeployment(c.appsv1Client, c.eventRecorder, operatorConfig, needsDeploy || caModified || configModified)
 	if err != nil {
 		return err
